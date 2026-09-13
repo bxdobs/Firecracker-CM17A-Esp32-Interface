@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta charset="UTF-8">
+<title>Esp32 FireCracker X10 Interface</title>
+
+<style>
+  body {
+    font-family: sans-serif;
+    text-align: center;
+    padding: 1.5em;
+    margin: 0;
+    overflow-x: hidden;
+  }
+
+  .center-box {
+    max-width: 480px;
+    margin: auto;
+    border: 3px solid black;
+    padding: 1.5em;
+    box-sizing: border-box;
+    background-color: white;
+  }
+
+  h1 {
+    margin-top: 0;
+    margin-bottom: 0.8em;
+  }
+
+  #units label {
+    display: inline-block;
+    width: 4ch;
+    text-align: right;
+    font-family: monospace;
+  }
+
+  #fcxForm label,
+  #fcxForm input,
+  #fcxForm select {
+    font-size: 1.1em;
+  }
+
+  #units div {
+    display: flex;
+    justify-content: center;
+    gap: 0.5em;
+    flex-wrap: wrap;
+  }
+
+  button {
+    padding: 0.5em 1.1em;
+    font-size: 1.05em;
+    margin: 0.15em;
+  }
+
+  #sysRow {
+    margin-top: 1.8em;
+    font-size: 1.05em;
+  }
+
+  #sysRow span {
+    display: inline-block;
+    margin: 0 0.6em;
+  }
+</style>
+</head>
+
+<body>
+
+<div class="center-box">
+
+<h1>Esp32 FireCracker</h1> 
+<h1>X10 Interface</h1>
+
+<iframe name="dummy" style="display:none"></iframe>
+
+<form id="fcxForm" action="/fcx" method="GET" target="dummy">
+
+  <label>House</label>
+  <select id="house">
+    <option>A</option><option>B</option><option>C</option><option>D</option>
+    <option>E</option><option>F</option><option>G</option><option>H</option>
+    <option>I</option><option>J</option><option>K</option><option>L</option>
+    <option>M</option><option>N</option><option>O</option><option>P</option>
+  </select>
+
+  <div id="units">
+    <div><label id="u1">1</label><button type="button" data-u="1n">on</button><button type="button" data-u="1f">off</button></div>
+    <div><label id="u2">2</label><button type="button" data-u="2n">on</button><button type="button" data-u="2f">off</button></div>
+    <div><label id="u3">3</label><button type="button" data-u="3n">on</button><button type="button" data-u="3f">off</button></div>
+    <div><label id="u4">4</label><button type="button" data-u="4n">on</button><button type="button" data-u="4f">off</button></div>
+    <div><label id="u5">5</label><button type="button" data-u="5n">on</button><button type="button" data-u="5f">off</button></div>
+    <div><label id="u6">6</label><button type="button" data-u="6n">on</button><button type="button" data-u="6f">off</button></div>
+    <div><label id="u7">7</label><button type="button" data-u="7n">on</button><button type="button" data-u="7f">off</button></div>
+    <div><label id="u8">8</label><button type="button" data-u="8n">on</button><button type="button" data-u="8f">off</button></div>
+  </div>
+
+  <div>
+    <label><input type="checkbox" id="bank"> Units 9-16</label>
+  </div>
+
+  <div>
+    <button type="button" id="allOn">ALL ON</button>
+    <button type="button" id="allOff">ALL OFF</button>
+  </div>
+
+  <div>
+    <input type="text"
+           id="cmdInput"
+           name="cmdHistory"
+           maxlength="4"
+           autocomplete="on"
+           spellcheck="false"
+           style="width:60px;font-family:monospace;">
+    <label id="cmdStatus"></label>
+  </div>
+
+</form>
+
+<div> 
+  <span> <button id="exit" onclick="fnExit()">Exit</button></span>
+</div>
+<script>
+let Socket = null;
+
+window.addEventListener("load", function () {
+  function fnExit() {
+    if (window.history.length > 1) {
+      window.history.back();
+    } else {
+      window.location.href = "/";
+    }
+  }
+
+  // expose it so onclick="fnExit()" works
+  window.fnExit = fnExit;
+  function initWebSocket() {
+    const proto = (location.protocol === "https:") ? "wss://" : "ws://";
+    const url   = proto + location.hostname + "/ws";
+    Socket      = new WebSocket(url);
+
+    Socket.onopen = function () {
+      // kick status request
+      Socket.send(JSON.stringify({ cmd: 99 }));
+    };
+
+    Socket.onmessage = function (event) {
+      let obj;
+      try {
+         obj = JSON.parse(event.data);
+      } catch (e) {
+         
+         return;
+      } 
+    };  
+    Socket.onclose = function () {
+      // simple, throttled reconnect
+      setTimeout(initWebSocket, 2000);
+    };
+  }
+
+  function fws(id) {
+    if (Socket && Socket.readyState === 1) {
+      Socket.send(JSON.stringify({ cmd: id.toString() }));
+    }
+  }
+
+  window.fws = fws;
+
+  const input        = document.getElementById("cmdInput");
+  const status       = document.getElementById("cmdStatus");
+  const form         = document.getElementById("fcxForm");
+  const bankCheckbox = document.getElementById("bank");
+  const houseSelect  = document.getElementById("house");
+  const allOn        = document.getElementById("allOn");
+  const allOff       = document.getElementById("allOff");
+
+  const ESP_HOUSE = 9;
+  const ESP_BANK  = 0;
+
+  let house = ESP_HOUSE & 0xF;
+  let bank  = ESP_BANK  & 0xF;
+
+  const UNIT_VALUES = [0x00, 0x10, 0x08, 0x18, 0x40, 0x50, 0x48, 0x58];
+
+  const HOUSE_MAP = {
+     0:  6,  1:  7,  2:  4,  3:  5,
+     4:  8,  5:  9,  6: 10,  7: 11,
+     8: 14,  9: 15, 10: 12, 11: 13,
+    12:  0, 13:  1, 14:  2, 15:  3
+  };
+  function focusInputIfDesktop() {
+    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+    if (!isMobile) {
+      input.focus();
+    }
+  }
+
+  function updateUnitLabels() {
+    const base = bank ? 8 : 0;
+    for (let i = 1; i <= 8; i++) {
+      document.getElementById("u" + i).textContent = base + i;
+    }
+  }
+
+  function buildFrameSingle(unitId) {
+    let firstByte = (HOUSE_MAP[house] << 4);
+    let secondByte;
+
+    if (unitId === "allon") {
+      secondByte = 0x91;
+    } else if (unitId === "alloff") {
+      secondByte = 0x80;
+    } else {
+      const unitNum = parseInt(unitId.charAt(0), 10);
+      const idx     = unitNum - 1;
+
+      if (bank) {
+        firstByte |= 0x4;
+      }
+
+      secondByte = UNIT_VALUES[idx];
+
+      if (unitId.charAt(1) === "f") {
+        secondByte |= 0x20;
+      }
+    }
+
+    const frameVal = (firstByte << 8) | secondByte;
+    let   hex      = frameVal.toString(16).toUpperCase();
+    while (hex.length < 4) {
+      hex = "0" + hex;
+    }
+    return hex;
+  }
+
+  function sndFrm(frame) {
+    status.textContent = "sent: " + frame;
+    // fetch("/fcx?cmd=" + frame);
+    //input.focus();
+    Socket.send(JSON.stringify({ cmd: 18, fcx: frame }));
+    
+    focusInputIfDesktop();
+  }
+
+  houseSelect.selectedIndex = house;
+  bankCheckbox.checked      = !!bank;
+  updateUnitLabels();
+  //input.focus();
+  focusInputIfDesktop();
+
+  bankCheckbox.addEventListener("change", function () {
+    bank = bankCheckbox.checked ? 1 : 0;
+    updateUnitLabels();
+    //input.focus();
+    focusInputIfDesktop();
+  });
+
+  houseSelect.addEventListener("change", function () {
+    house = houseSelect.selectedIndex;
+    //input.focus();
+    focusInputIfDesktop();
+  });
+
+  input.addEventListener("input", function () {
+    input.value = input.value.replace(/[^0-9a-fA-F]/g, "").toUpperCase();
+    if (input.value.length === 4) {
+      status.textContent = "ready: " + input.value;
+    } else if (input.value.length) {
+      status.textContent = "pending: " + input.value;
+    } else {
+      status.textContent = "";
+    }
+  });
+
+  input.addEventListener("keyup", function (e) {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      if (input.value.length !== 4) {
+        status.textContent = "format error (4 hex digits)";
+        return;
+      }
+      var v = input.value;
+      var frame = parseInt(v, 16);
+      //alert("v = [" + v + "]");
+
+      var byte1 = (frame >> 8) & 0xFF;
+      var byte2 = frame & 0xFF;
+
+      // Mask byte2 first (bits 2 and 6 are invalid)
+      //byte2 &= 0xDD;
+
+      // If bit 7 of byte2 is set ΓåÆ function frame
+      //if (byte2 & 0x80) {
+      //   byte1 &= 0xF0;   // house code only
+      //} else {
+      //   byte1 &= 0xF4;   // house code + bank bit
+      //}
+
+      var safeFrame = ((byte1 << 8) | byte2)
+                  .toString(16)
+                  .toUpperCase()
+                  .padStart(4, "0");
+
+      //alert("safeFrame = [" + safeFrame + "]");
+      fetch("/fcx?cmd=" + safeFrame);
+      status.textContent = safeFrame + " sent";
+
+      input.value = "";
+      //input.focus();
+      focusInputIfDesktop();
+    }
+  });
+
+  const unitButtons = document.querySelectorAll("#units button");
+  for (let i = 0; i < unitButtons.length; i++) {
+    unitButtons[i].addEventListener("click", function (e) {
+      e.preventDefault();
+      const u     = this.getAttribute("data-u");
+      const frame = buildFrameSingle(u);
+      sndFrm(frame);
+    });
+  }
+
+  allOn.addEventListener("click", function (e) {
+    e.preventDefault();
+    sndFrm(buildFrameSingle("allon"));
+  });
+
+  allOff.addEventListener("click", function (e) {
+    e.preventDefault();
+    sndFrm(buildFrameSingle("alloff"));
+  });
+
+  // single, top-level WebSocket init
+  initWebSocket();
+
+});
+</script>
+
+</body>
+</html>
