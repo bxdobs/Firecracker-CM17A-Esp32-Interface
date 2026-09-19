@@ -26,6 +26,8 @@
 #define _FC_STOP_TIME_MS  2000
 #define _FC_RESET_TIME_MS   50
 #define _FC_WAKE_TIME      300 // 30 seconds * .1 Sec 
+#define _FC_ON               1
+#define _FC_OFF              0
 
 class FirecrackerClass {
 public:
@@ -45,17 +47,25 @@ gpio_num_t pwr  = _FC_PWR;
       int stpTm = _FC_STOP_TIME_MS;
       int rstTm = _FC_RESET_TIME_MS;
       int wkTm  = _FC_WAKE_TIME;
-     bool fcOff = true;
+      bool fcOn = false;
    } fcp;
 
+   static const char * const zones[];
+   static const uint16_t unitCodes[];
+   static const char * const units[];
+   static const uint8_t cmdCodes[];
+   static const char * const cmds[];
+   
    void begin();
    void loop();
    
    // hardware routines
-   void initFCgpio(void);
-   void pwrFCoff(void);
-   void pwrFCon(void);
+   bool pwrFC(int pwrState);
+   String dcfc(uint16_t code);
+   void resetFC(void);
 
+   void initFCgpio(void);
+ 
    int  txBitStream(const uint8_t bits[40]);
    uint16_t str2hex(const String& hexstr);
 
@@ -68,7 +78,7 @@ gpio_num_t pwr  = _FC_PWR;
    // inter Core handlers
    bool wsHandler(JsonDocument& doc);
    //bool httpHandler(const EspCoreClass::EndPoint& epp);
-   String appEndPointExtension(const EspCoreClass::EndPoint& epp);
+   String EndPointExtension(const EspCoreClass::EndPoint& epp);
    bool mqttHandler(const EspCoreClass::MqttMsg& M);
 
 };
